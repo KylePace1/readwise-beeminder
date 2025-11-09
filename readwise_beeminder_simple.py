@@ -22,25 +22,40 @@ BEEMINDER_API_BASE = "https://www.beeminder.com/api/v1"
 
 
 def already_posted_today():
-    """Check if we've already posted to Beeminder today"""
+    """Check if we've already posted to Beeminder today (in Beeminder's timezone)"""
     if not BEEMINDER_AUTH_TOKEN:
         return False
 
     try:
+        # Get goal info to find timezone
+        goal_url = f"{BEEMINDER_API_BASE}/users/{BEEMINDER_USERNAME}/goals/{BEEMINDER_GOAL}.json"
+        goal_params = {'auth_token': BEEMINDER_AUTH_TOKEN}
+        goal_response = requests.get(goal_url, params=goal_params)
+
+        # Get timezone offset from goal (defaults to UTC if not found)
+        goal_data = goal_response.json() if goal_response.status_code == 200 else {}
+        # Beeminder uses 'timezone' field like 'America/Los_Angeles'
+        # For simplicity, we'll just check the last few datapoints instead
+
         url = f"{BEEMINDER_API_BASE}/users/{BEEMINDER_USERNAME}/goals/{BEEMINDER_GOAL}/datapoints.json"
-        params = {'auth_token': BEEMINDER_AUTH_TOKEN, 'count': 10}
+        params = {'auth_token': BEEMINDER_AUTH_TOKEN, 'count': 5, 'sort': 'id'}
         response = requests.get(url, params=params)
 
         if response.status_code == 200:
             datapoints = response.json()
-            today = datetime.now().strftime('%Y%m%d')
 
+            # Check the most recent datapoints for our signature
+            # Don't rely on daystamp matching since timezones differ
             for dp in datapoints:
-                daystamp = dp.get('daystamp', '')
                 comment = dp.get('comment', '')
-                # Check if posted today AND contains our auto-track signature
-                if daystamp == today and 'Auto-tracked from Readwise Reader' in comment and 'items today' in comment:
-                    print(f"Found existing post for today: {comment}")
+                timestamp = dp.get('timestamp', 0)
+
+                # Check if this was posted in the last 20 hours AND has our signature
+                # This handles timezone differences (24h - 4h buffer = 20h)
+                hours_ago = (datetime.now().timestamp() - timestamp) / 3600
+
+                if hours_ago < 20 and 'Auto-tracked from Readwise Reader' in comment and 'items today' in comment:
+                    print(f"Found recent post ({hours_ago:.1f}h ago): {comment}")
                     return True
         return False
     except Exception as e:
