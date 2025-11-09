@@ -161,12 +161,6 @@ def main():
     print(f"FILTER: Tag '{tag}'")
     print()
 
-    # Check if already posted
-    if not args.force and not args.dry_run and already_posted_today():
-        print("✓ Already posted today - skipping")
-        print("(Use --force to post anyway)")
-        return
-
     # Get ALL archived items with tag
     items = get_total_archived_items(filter_tag=tag)
     total_count = len(items)
@@ -181,6 +175,8 @@ def main():
             print(f"  ... and {total_count - 5} more")
 
     # Post total count to Beeminder
+    # Note: This will post every time it runs. Rely on cron schedule (once daily) to prevent duplicates.
+    # Goal should use 'last' aggregation so only the final value of the day counts.
     print()
     post_to_beeminder(total_count, dry_run=args.dry_run)
 
