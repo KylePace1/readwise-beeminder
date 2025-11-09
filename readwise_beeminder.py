@@ -30,15 +30,49 @@ READWISE_API_BASE = "https://readwise.io/api/v3"
 BEEMINDER_API_BASE = "https://www.beeminder.com/api/v1"
 
 
+def get_last_beeminder_datapoint():
+    """Get the timestamp of the last datapoint from Beeminder"""
+    if not BEEMINDER_AUTH_TOKEN:
+        return None
+
+    try:
+        url = f"{BEEMINDER_API_BASE}/users/{BEEMINDER_USERNAME}/goals/{BEEMINDER_GOAL}/datapoints.json"
+        params = {
+            'auth_token': BEEMINDER_AUTH_TOKEN,
+            'count': 1,  # Just get the most recent one
+            'sort': 'timestamp'
+        }
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            datapoints = response.json()
+            if datapoints and len(datapoints) > 0:
+                # Return timestamp of most recent datapoint
+                return datapoints[-1].get('timestamp')
+        return None
+    except Exception as e:
+        print(f"Warning: Could not fetch last Beeminder datapoint: {e}")
+        return None
+
+
 def load_last_run_time():
-    """Load the last run timestamp from state file"""
+    """Load the last run timestamp from state file or Beeminder"""
+    # Try state file first
     if STATE_FILE.exists():
         try:
             with open(STATE_FILE, 'r') as f:
                 state = json.load(f)
-                return state.get('last_run_timestamp')
+                timestamp = state.get('last_run_timestamp')
+                if timestamp:
+                    return timestamp
         except Exception as e:
             print(f"Warning: Could not load state file: {e}")
+
+    # Fall back to checking last Beeminder datapoint
+    last_datapoint = get_last_beeminder_datapoint()
+    if last_datapoint:
+        print(f"No local state found, using last Beeminder datapoint timestamp")
+        return last_datapoint
+
     return None
 
 
@@ -78,10 +112,14 @@ def get_archived_items(since_timestamp=None, filter_tag=None):
     }
 
     # Add timestamp filter if provided
+    # Note: updatedAfter filters items that were moved to archive OR updated in that timeframe
     if since_timestamp:
         # Readwise API uses ISO format for updatedAfter
         since_date = datetime.fromtimestamp(since_timestamp).isoformat()
         params['updatedAfter'] = since_date
+
+        # We'll need to filter on our end by checking when item actually moved to archive
+        # This is tracked in the 'reading_progress' field
 
     url = f"{READWISE_API_BASE}/list/"
 
