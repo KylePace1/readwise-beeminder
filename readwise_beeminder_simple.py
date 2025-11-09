@@ -112,30 +112,68 @@ def get_total_archived_items(filter_tag=None):
         sys.exit(1)
 
 
-def post_to_beeminder(value, dry_run=False):
-    """Post total count to Beeminder"""
+def get_last_total_from_beeminder():
+    """Get the last total count we posted to Beeminder"""
+    if not BEEMINDER_AUTH_TOKEN:
+        return 0
+
+    try:
+        url = f"{BEEMINDER_API_BASE}/users/{BEEMINDER_USERNAME}/goals/{BEEMINDER_GOAL}/datapoints.json"
+        params = {'auth_token': BEEMINDER_AUTH_TOKEN, 'count': 10, 'sort': 'id'}
+        response = requests.get(url, params=params)
+
+        if response.status_code == 200:
+            datapoints = response.json()
+            # Find most recent datapoint with our signature
+            for dp in reversed(datapoints):  # Most recent first
+                comment = dp.get('comment', '')
+                if 'Total:' in comment:
+                    # Extract total from comment like "Total: 5 (+2 new)"
+                    try:
+                        total = int(comment.split('Total:')[1].split()[0])
+                        return total
+                    except:
+                        pass
+        return 0
+    except Exception as e:
+        print(f"Warning: Could not get last total: {e}")
+        return 0
+
+
+def post_to_beeminder(current_total, dry_run=False):
+    """Post the DIFFERENCE (new items) to Beeminder"""
     if not BEEMINDER_AUTH_TOKEN:
         print("Error: BEEMINDER_TOKEN not set")
         sys.exit(1)
 
+    # Get last total we posted
+    last_total = get_last_total_from_beeminder()
+    difference = current_total - last_total
+
     url = f"{BEEMINDER_API_BASE}/users/{BEEMINDER_USERNAME}/goals/{BEEMINDER_GOAL}/datapoints.json"
-    comment = f"Total archived items with tag '{DEFAULT_TAG}'"
+    comment = f"Total: {current_total} (+{difference} new)"
 
     if dry_run:
-        print(f"[DRY RUN] Would post total: {value}")
+        print(f"[DRY RUN] Last total: {last_total}")
+        print(f"[DRY RUN] Current total: {current_total}")
+        print(f"[DRY RUN] Would post difference: {difference}")
         print(f"[DRY RUN] Comment: {comment}")
         return True
 
     try:
+        print(f"Last total: {last_total}")
+        print(f"Current total: {current_total}")
+        print(f"Difference (new items): {difference}")
+
         data = {
             'auth_token': BEEMINDER_AUTH_TOKEN,
-            'value': value,
+            'value': difference,  # Post the difference, not the total
             'comment': comment
         }
         response = requests.post(url, data=data)
 
         if response.status_code == 200:
-            print(f"✓ Posted total count: {value}")
+            print(f"✓ Posted {difference} new items to Beeminder")
             return True
         else:
             print(f"✗ Error: {response.status_code} - {response.text}")
