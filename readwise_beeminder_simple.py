@@ -28,7 +28,7 @@ def already_posted_today():
 
     try:
         url = f"{BEEMINDER_API_BASE}/users/{BEEMINDER_USERNAME}/goals/{BEEMINDER_GOAL}/datapoints.json"
-        params = {'auth_token': BEEMINDER_AUTH_TOKEN, 'count': 5}
+        params = {'auth_token': BEEMINDER_AUTH_TOKEN, 'count': 10}
         response = requests.get(url, params=params)
 
         if response.status_code == 200:
@@ -36,10 +36,15 @@ def already_posted_today():
             today = datetime.now().strftime('%Y%m%d')
 
             for dp in datapoints:
-                if dp.get('daystamp') == today and 'Auto-tracked' in dp.get('comment', ''):
+                daystamp = dp.get('daystamp', '')
+                comment = dp.get('comment', '')
+                # Check if posted today AND contains our auto-track signature
+                if daystamp == today and 'Auto-tracked from Readwise Reader' in comment and 'items today' in comment:
+                    print(f"Found existing post for today: {comment}")
                     return True
         return False
-    except:
+    except Exception as e:
+        print(f"Warning checking duplicates: {e}")
         return False
 
 
