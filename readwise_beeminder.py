@@ -109,24 +109,19 @@ def get_archived_items(since_timestamp=None, filter_tag=None):
 
     params = {
         'location': 'archive',  # Only get archived items
+        'category': 'article',  # Can be: article, email, rss, highlight, note, pdf, epub, tweet, video
     }
 
-    # Add timestamp filter if provided
-    # Note: updatedAfter filters items that were moved to archive OR updated in that timeframe
-    if since_timestamp:
-        # Readwise API uses ISO format for updatedAfter
-        since_date = datetime.fromtimestamp(since_timestamp).isoformat()
-        params['updatedAfter'] = since_date
-
-        # We'll need to filter on our end by checking when item actually moved to archive
-        # This is tracked in the 'reading_progress' field
+    # Note: We fetch ALL archived items and then filter by updatedAt on our end
+    # The 'updatedAfter' API param catches items that were archived OR had any update,
+    # which causes duplicates. Instead we'll filter by the 'updated_at' field client-side.
 
     url = f"{READWISE_API_BASE}/list/"
 
     try:
         print(f"Fetching archived items from Readwise Reader...")
         if since_timestamp:
-            print(f"Looking for items archived since: {datetime.fromtimestamp(since_timestamp)}")
+            print(f"Looking for items updated since: {datetime.fromtimestamp(since_timestamp)}")
 
         all_items = []
         next_page_cursor = None
@@ -150,6 +145,29 @@ def get_archived_items(since_timestamp=None, filter_tag=None):
             print(f"Fetched {len(all_items)} items so far...")
 
         print(f"✓ Found {len(all_items)} archived items")
+
+        # Filter by updated_at timestamp client-side
+        if since_timestamp:
+            filtered_by_time = []
+            for item in all_items:
+                # Check when the item was last updated
+                updated_at_str = item.get('updated_at')
+                if updated_at_str:
+                    try:
+                        # Parse ISO format timestamp
+                        updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+                        updated_timestamp = updated_at.timestamp()
+                        if updated_timestamp > since_timestamp:
+                            filtered_by_time.append(item)
+                    except:
+                        # If we can't parse, include it to be safe
+                        filtered_by_time.append(item)
+                else:
+                    # No timestamp, include it
+                    filtered_by_time.append(item)
+
+            all_items = filtered_by_time
+            print(f"✓ Filtered to {len(all_items)} items updated since {datetime.fromtimestamp(since_timestamp)}")
 
         # Filter by tag if specified
         if filter_tag:
