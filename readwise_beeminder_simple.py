@@ -54,7 +54,7 @@ def already_posted_today():
                 # This handles timezone differences (24h - 4h buffer = 20h)
                 hours_ago = (datetime.now().timestamp() - timestamp) / 3600
 
-                if hours_ago < 20 and 'Auto-tracked from Readwise Reader' in comment and 'items today' in comment:
+                if hours_ago < 20 and 'Total archived items with tag' in comment:
                     print(f"Found recent post ({hours_ago:.1f}h ago): {comment}")
                     return True
         return False
@@ -63,8 +63,8 @@ def already_posted_today():
         return False
 
 
-def get_items_archived_today(filter_tag=None):
-    """Get count of items archived TODAY"""
+def get_total_archived_items(filter_tag=None):
+    """Get TOTAL count of all archived items with the tag (not just today)"""
     if not READWISE_TOKEN:
         print("Error: READWISE_TOKEN not set")
         sys.exit(1)
@@ -72,12 +72,8 @@ def get_items_archived_today(filter_tag=None):
     headers = {'Authorization': f'Token {READWISE_TOKEN}'}
     params = {'location': 'archive'}
 
-    # Calculate today's start time (midnight)
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    params['updatedAfter'] = today_start.isoformat()
-
     try:
-        print(f"Fetching items archived today...")
+        print(f"Fetching all archived items...")
         all_items = []
         next_cursor = None
 
@@ -94,7 +90,9 @@ def get_items_archived_today(filter_tag=None):
             if not next_cursor:
                 break
 
-        print(f"✓ Found {len(all_items)} archived items today")
+            print(f"Fetched {len(all_items)} items so far...")
+
+        print(f"✓ Found {len(all_items)} total archived items")
 
         # Filter by tag
         if filter_tag:
@@ -115,16 +113,16 @@ def get_items_archived_today(filter_tag=None):
 
 
 def post_to_beeminder(value, dry_run=False):
-    """Post to Beeminder"""
+    """Post total count to Beeminder"""
     if not BEEMINDER_AUTH_TOKEN:
         print("Error: BEEMINDER_TOKEN not set")
         sys.exit(1)
 
     url = f"{BEEMINDER_API_BASE}/users/{BEEMINDER_USERNAME}/goals/{BEEMINDER_GOAL}/datapoints.json"
-    comment = f"Auto-tracked from Readwise Reader ({value} items today)"
+    comment = f"Total archived items with tag '{DEFAULT_TAG}'"
 
     if dry_run:
-        print(f"[DRY RUN] Would post: {value} items")
+        print(f"[DRY RUN] Would post total: {value}")
         print(f"[DRY RUN] Comment: {comment}")
         return True
 
@@ -137,7 +135,7 @@ def post_to_beeminder(value, dry_run=False):
         response = requests.post(url, data=data)
 
         if response.status_code == 200:
-            print(f"✓ Posted {value} items to Beeminder")
+            print(f"✓ Posted total count: {value}")
             return True
         else:
             print(f"✗ Error: {response.status_code} - {response.text}")
@@ -148,7 +146,7 @@ def post_to_beeminder(value, dry_run=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Daily Readwise to Beeminder sync')
+    parser = argparse.ArgumentParser(description='Readwise total count to Beeminder')
     parser.add_argument('--dry-run', action='store_true', help='Test mode')
     parser.add_argument('--tag', type=str, help=f'Tag to filter (default: {DEFAULT_TAG})')
     parser.add_argument('--force', action='store_true', help='Post even if already posted today')
@@ -156,7 +154,7 @@ def main():
 
     tag = args.tag or DEFAULT_TAG
 
-    print("=== Readwise Reader to Beeminder (Daily Sync) ===")
+    print("=== Readwise Reader to Beeminder (Total Count) ===")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     if args.dry_run:
         print("MODE: DRY RUN")
@@ -169,22 +167,22 @@ def main():
         print("(Use --force to post anyway)")
         return
 
-    # Get items
-    items = get_items_archived_today(filter_tag=tag)
-    count = len(items)
+    # Get ALL archived items with tag
+    items = get_total_archived_items(filter_tag=tag)
+    total_count = len(items)
 
-    print(f"\nItems archived today: {count}")
+    print(f"\nTotal archived items with tag '{tag}': {total_count}")
 
-    if count > 0:
+    if total_count > 0:
+        print(f"\nMost recent items:")
         for item in items[:5]:
             print(f"  - {item.get('title', 'Untitled')[:60]}...")
-        if count > 5:
-            print(f"  ... and {count - 5} more")
+        if total_count > 5:
+            print(f"  ... and {total_count - 5} more")
 
-    # Post to Beeminder
-    if count >= 0:  # Post even if 0 to track the day
-        print()
-        post_to_beeminder(count, dry_run=args.dry_run)
+    # Post total count to Beeminder
+    print()
+    post_to_beeminder(total_count, dry_run=args.dry_run)
 
     print("\n=== Sync Complete ===")
 
