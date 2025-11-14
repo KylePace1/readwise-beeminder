@@ -125,7 +125,8 @@ def get_last_total_from_beeminder():
         if response.status_code == 200:
             datapoints = response.json()
             # Find most recent datapoint with our signature
-            for dp in reversed(datapoints):  # Most recent first
+            # API returns most recent first when sort=id, so iterate normally
+            for dp in datapoints:  # Most recent first
                 comment = dp.get('comment', '')
                 if 'Total:' in comment:
                     # Extract total from comment like "Total: 5 (+2 new)"
@@ -153,18 +154,21 @@ def post_to_beeminder(current_total, dry_run=False):
     url = f"{BEEMINDER_API_BASE}/users/{BEEMINDER_USERNAME}/goals/{BEEMINDER_GOAL}/datapoints.json"
     comment = f"Total: {current_total} (+{difference} new)"
 
+    print(f"Last total: {last_total}")
+    print(f"Current total: {current_total}")
+    print(f"Difference (new items): {difference}")
+
+    # Skip posting if difference is 0
+    if difference == 0:
+        print("No new items to post - skipping")
+        return True
+
     if dry_run:
-        print(f"[DRY RUN] Last total: {last_total}")
-        print(f"[DRY RUN] Current total: {current_total}")
         print(f"[DRY RUN] Would post difference: {difference}")
         print(f"[DRY RUN] Comment: {comment}")
         return True
 
     try:
-        print(f"Last total: {last_total}")
-        print(f"Current total: {current_total}")
-        print(f"Difference (new items): {difference}")
-
         data = {
             'auth_token': BEEMINDER_AUTH_TOKEN,
             'value': difference,  # Post the difference, not the total
